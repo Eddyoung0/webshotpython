@@ -33,11 +33,15 @@ def install_dependencies():
     ensure_playwright_browser_installed()
 
 
-def capture_full_length_image(page):
+def capture_full_length_image(page, max_scroll_steps=500):
     """Capture full content as an image.
 
     Tries full_page first; if that is still viewport-limited, falls back to
     scroll-and-stitch capture to support internal scrollable viewers.
+    
+    Args:
+        page: Playwright page object
+        max_scroll_steps (int): Maximum number of scrolls to attempt (default: 500)
     """
     from PIL import Image
     import io
@@ -57,15 +61,15 @@ def capture_full_length_image(page):
     frames = []
     seen_hashes = set()
     repeated_frames = 0
-    max_steps = 60
 
-    for _ in range(max_steps):
+    for step in range(max_scroll_steps):
         frame_bytes = page.screenshot(full_page=False)
         frame_hash = hashlib.sha1(frame_bytes).hexdigest()
 
         if frame_hash in seen_hashes:
             repeated_frames += 1
-            if repeated_frames >= 3:
+            if repeated_frames >= 5:  # Increased threshold for consistency
+                print(f"✓ Reached end of content after {step} scrolls ({len(frames)} frames captured)")
                 break
         else:
             repeated_frames = 0
@@ -118,7 +122,7 @@ def save_full_length_pdf_from_image(image, output_pdf):
     )
 
 
-def screenshot_webpage(url, output_pdf=None, output_image=None, wait_time=3):
+def screenshot_webpage(url, output_pdf=None, output_image=None, wait_time=3, max_scroll_steps=500):
     """
     Take a screenshot of a webpage and optionally convert to PDF
     
@@ -127,6 +131,7 @@ def screenshot_webpage(url, output_pdf=None, output_image=None, wait_time=3):
         output_pdf (str): Output path for PDF file (optional)
         output_image (str): Output path for image file (optional)
         wait_time (int): Time to wait for page to load (in seconds)
+        max_scroll_steps (int): Maximum number of scroll attempts for full-page capture (default: 500)
     
     Returns:
         tuple: (success: bool, message: str, files_created: list)
@@ -159,7 +164,7 @@ def screenshot_webpage(url, output_pdf=None, output_image=None, wait_time=3):
                 output_pdf = f"screenshot_{domain}_{timestamp}.pdf"
             
             # Capture a true full-length image first.
-            full_length_image = capture_full_length_image(page)
+            full_length_image = capture_full_length_image(page, max_scroll_steps=max_scroll_steps)
 
             # Save as PDF (default behavior)
             if not output_pdf:
@@ -188,7 +193,7 @@ def screenshot_webpage(url, output_pdf=None, output_image=None, wait_time=3):
             try:
                 print("Playwright browser not found. Installing Chromium...")
                 ensure_playwright_browser_installed()
-                return screenshot_webpage(url, output_pdf, output_image, wait_time)
+                return screenshot_webpage(url, output_pdf, output_image, wait_time, max_scroll_steps)
             except Exception as install_error:
                 return False, f"Error installing Playwright browser: {install_error}", []
 
@@ -205,6 +210,7 @@ Examples:
   python webpage_to_pdf.py https://www.example.com -o mypage.pdf
   python webpage_to_pdf.py example.com -o output.pdf -i screenshot.png
   python webpage_to_pdf.py https://www.example.com --wait 5
+  python webpage_to_pdf.py https://www.verylongpage.com --max-scroll 1000
         """
     )
     
@@ -215,6 +221,8 @@ Examples:
                        help='Also save as PNG image')
     parser.add_argument('-w', '--wait', type=int, default=3,
                        help='Wait time for page to load in seconds (default: 3)')
+    parser.add_argument('--max-scroll', type=int, default=500,
+                       help='Maximum scroll attempts for capturing full-page content (default: 500)')
     
     args = parser.parse_args()
     
@@ -233,7 +241,8 @@ Examples:
         args.url,
         output_pdf=args.output_pdf,
         output_image=args.output_image,
-        wait_time=args.wait
+        wait_time=args.wait,
+        max_scroll_steps=args.max_scroll
     )
     
     print("=" * 50)
